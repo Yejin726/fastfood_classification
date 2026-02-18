@@ -1,132 +1,75 @@
-import logging
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import torch
-from PIL import Image
-import zipfile
+
+def run(cmd: list[str]) -> None:
+    print(">>", " ".join(cmd))
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(
+            f"Command failed ({p.returncode}): {' '.join(cmd)}\n"
+            f"--- stdout ---\n{p.stdout}\n"
+            f"--- stderr ---\n{p.stderr}\n"
+        )
+    if p.stdout.strip():
+        print(p.stdout.strip())
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logging.info("Using device: %s", device)
+def ensure_tool(name: str) -> None:
+    if shutil.which(name) is None:
+        raise RuntimeError(
+            f"Required tool '{name}' not found. Install it first."
+        )
 
 
-def mount_colab_drive(mount_point: Path) -> None:
-    try:
-        from google.colab import drive
-    except ImportError:
-        logging.info("Google Colab drive mount is not available in this environment.")
-        return
+def download_file(drive_url: str, out_dir: str = "dataset", out_name: str = "Train.zip") -> Path:
+    ensure_tool("gdown")
+    out_dir_p = Path(out_dir)
+    out_dir_p.mkdir(parents=True, exist_ok=True)
 
-    logging.info("Mounting Google Drive at %s", mount_point)
-    drive.mount(str(mount_point), force_remount=False)
+    out_path = out_dir_p / out_name
 
+    # 핵심: -O 로 저장 경로를 지정
+    if not out_path.exists():
+        run(["gdown", "--fuzzy", drive_url, "-O", str(out_path)])
 
-def extract_zip_file(zip_path: Path, output_dir: Path) -> None:
+    print(f"[ok] downloaded to: {out_path.resolve()}")
+    return out_path
+
+def unzip_file(zip_path, extract_dir):
+    ensure_tool("unzip")
+    
+    zip_path = Path(zip_path)
+    
     if not zip_path.exists():
-        raise FileNotFoundError(f"ZIP file not found: {zip_path}")
+        raise FileNotFoundError(f"{zip_path} does not exist.")
+    
+    if extract_dir is None:
+        extract_dir = zip_path.parent
+        
+    extract_dir = Path(extract_dir)
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    
+    extracted_flag = any(extract_dir.iterdir())
 
-    logging.info("Extracting %s into %s", zip_path, output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(zip_path, "r") as archive:
-        archive.extractall(output_dir)
+    if extracted_flag:
+        print(f"[skip] {extract_dir} already has contents. Skipping unzip.")
+        return extract_dir
+    
+    print(f"[unzip] Extracting {zip_path} -> {extract_dir}")
 
-
-def load_image_array(image_path: Path, image_size: tuple[int, int]) -> np.ndarray:
-    with Image.open(image_path) as image:
-        image = image.convert("RGB").resize(image_size, Image.LANCZOS)
-        return np.asarray(image, dtype="float32") / 255.0
-
-
-def load_labeled_images(base_dir: Path, image_size: tuple[int, int]) -> tuple[np.ndarray, np.ndarray, dict[int, str]]:
-    class_dirs = sorted([entry for entry in base_dir.iterdir() if entry.is_dir()])
-    if not class_dirs:
-        raise ValueError(f"No class directories found in {base_dir}")
-
-    classes = {idx: entry.name for idx, entry in enumerate(class_dirs)}
-    name_to_idx = {name: idx for idx, name in classes.items()}
-
-    data = []
-    labels = []
-
-    for class_dir in class_dirs:
-        label = name_to_idx[class_dir.name]
-        for image_file in sorted(class_dir.iterdir()):
-            if not image_file.is_file():
-                continue
-            data.append(load_image_array(image_file, image_size))
-            labels.append(label)
-
-    return np.stack(data), np.array(labels, dtype=np.int64), classes
-
-
-def load_unlabeled_images(base_dir: Path, image_size: tuple[int, int]) -> np.ndarray:
-    image_files = [entry for entry in base_dir.iterdir() if entry.is_file()]
-    image_files = sorted(image_files, key=lambda entry: int(entry.stem))
-
-    dataset = [load_image_array(path, image_size) for path in image_files]
-    return np.stack(dataset)
-
-
-def plot_label_distribution(labels: np.ndarray, classes: dict[int, str]) -> None:
-    label_names = [classes[int(label)] for label in labels.tolist()]
-    df = pd.DataFrame({"label": label_names})
-
-    plt.figure(figsize=(12, 4))
-    ax = sns.countplot(x="label", data=df, order=list(classes.values()))
-    ax.set_title("Training label distribution")
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-    plt.show()
-
-
-def prepare_data_from_drive(drive_data_root: str, dest_root: Path, image_size: tuple[int, int] = (64, 64)) -> None:
-    drive_root = Path(drive_data_root)
-    if not drive_root.exists():
-        raise FileNotFoundError(f"Provided Google Drive path does not exist: {drive_root}")
-
-    train_zip = drive_root / "Train.zip"
-    test_zip = drive_root / "Test.zip"
-
-    if not train_zip.exists() or not test_zip.exists():
-        raise FileNotFoundError("Train.zip and Test.zip must exist within the provided drive directory.")
-
-    logging.info("Preparing training split")
-    train_dir = dest_root / "Train"
-    extract_zip_file(train_zip, train_dir)
-
-    logging.info("Preparing test split")
-    test_dir = dest_root / "Test"
-    extract_zip_file(test_zip, test_dir)
-
-    data, labels, classes = load_labeled_images(train_dir, image_size)
-    test_data = load_unlabeled_images(test_dir, image_size)
-
-    logging.info("Training data shape: %s", data.shape)
-    logging.info("Training labels shape: %s", labels.shape)
-    logging.info("Test data shape: %s", test_data.shape)
-
-    unique_labels, counts = np.unique(labels, return_counts=True)
-    logging.info("Number of classes: %s", unique_labels.size)
-    logging.info("Samples per class: %s", counts.tolist())
-
-    plot_label_distribution(labels, classes)
-
-
-def main() -> None:
-    mount_colab_drive(Path("/content/drive"))
-
-    drive_data_path = "https://drive.google.com/drive/folders/1eW6T-zy93jW1frGAKJ8pf8_bbxc8pqdb?usp=sharing"
-    target_dir = Path("./data")
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    prepare_data_from_drive(drive_data_path, target_dir)
+    run(["unzip", "-o", str(zip_path), "-d", str(extract_dir)])
 
 
 if __name__ == "__main__":
-    main()
-
+    DRIVE_TRAIN_URL = "https://drive.google.com/file/d/1RCl-k2s-mN0siVVyHXmE8fTC-rPzNMnD/view?usp=sharing"
+    DRIVE_TEST_URL = "https://drive.google.com/file/d/1PYnRVNE_D0VEdVFsrv-RDucm27sEpt9-/view?usp=sharing"
+    out_path = './data'
+    
+    train_unzip = download_file(DRIVE_TRAIN_URL, "./dataset", "Train.zip")
+    test_unzip = download_file(DRIVE_TEST_URL, "./dataset", "Test.zip")
+    
+    unzip_file(train_unzip, os.path.join(out_path, 'Train'))
+    unzip_file(test_unzip, os.path.join(out_path, 'Test'))
