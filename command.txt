@@ -1,0 +1,5 @@
+# SERVER
+tensorboard --logdir runs --port 16006 --bind_all
+
+# LOCAL
+ssh -N -L 16006:localhost:16006 -p 11340 -i ~/.ssh/id_ed25519 root@66.92.198.138
