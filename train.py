@@ -27,13 +27,13 @@ from torch.cuda.amp import autocast, GradScaler
 # =========================
 @dataclass
 class CFG:
-    seed: int = 42
+    seed: int = 43
     data_root: str = "./data"     # <- 수정
     train_dir: str = "Train"             # train/<class_name>/*.jpg
     test_dir: str  = "Test"              # test/*.jpg
 
     num_classes: int = 10
-    img_size: int = 320
+    img_size: int = 224
     batch_size: int = 64
     num_workers: int = 2
     epochs: int = 25 #15
@@ -290,7 +290,7 @@ def per_class_f1_from_confmat(cm: np.ndarray):
     return np.array(f1s)
 
 #convnext_tiny, convnext_small, convnext_base, efficientnet_b2, resnext50_32x4d, wide_resnet50_2
-cfg.model_name = "resnext50_32x4d"
+cfg.model_name = "convnext_tiny"
 model = build_model(cfg.model_name, cfg.num_classes).to(device)
 
 criterion = nn.CrossEntropyLoss(weight=loss_weights)
@@ -303,14 +303,14 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.epoc
 best_f1 = -1.0
 wait = 0 
 #best_path = root / "best_resnet50.pt"
-best_path = Path(f"./checkpoint/320/{cfg.model_name}.pt")
+best_path = Path(f"./checkpoint/224/{cfg.model_name}_43.pt")
 
 
 #run_name = f"resnet50_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 run_name = f"{cfg.model_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 writer = SummaryWriter(log_dir=f"runs/{run_name}")
 global_step = 0
-patience = 7          # 개선 없으면 몇 epoch 기다릴지 (추천 6~8)
+patience = 15          # 개선 없으면 몇 epoch 기다릴지 (추천 6~8)
 min_delta = 1e-4      # 이 정도 이상 좋아져야 "개선"으로 인정
 
 

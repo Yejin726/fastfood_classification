@@ -26,6 +26,41 @@ ENSEMBLE_ITEMS = [
     {"img_size": 224, "model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny.pt",  "weight": 1.00},
     {"img_size": 320, "model_name": "convnext_tiny",  "ckpt": "./checkpoint/320/convnext_tiny.pt",  "weight": 1.00},
 ]
+
+ENSEMBLE_ITEMS2 = [
+    {"img_size": 224, "model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small.pt", "weight": 1.25},
+    {"img_size": 224, "model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small_43.pt", "weight": 1.25},
+    {"img_size": 224, "model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny.pt",  "weight": 1.00},
+    {"img_size": 224, "model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny_43.pt",  "weight": 1.00},
+]
+
+# models_weighted = [
+#     {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small.pt",
+#      "val_loader": val_loader42_224, "weight": 1.2},
+    
+#     {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small_43.pt",
+#      "val_loader": val_loader43_224, "weight": 1.2},
+
+
+#     {"model_name": "convnext_small", "ckpt": "./checkpoint/320/convnext_small.pt",
+#      "val_loader": val_loader42_320, "weight": 1.0},
+
+#     {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny.pt",
+#      "val_loader": val_loader42_224, "weight": 1.0},
+    
+#     {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny_43.pt",
+#      "val_loader": val_loader43_224, "weight": 1.0},
+
+#     {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/320/convnext_tiny.pt",
+#      "val_loader": val_loader42_320, "weight": 1.0},
+
+#     {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/224/resnext50_32x4d.pt",
+#      "val_loader": val_loader42_224, "weight": 0.9},
+
+#     {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/320/resnext50_32x4d.pt",
+#      "val_loader": val_loader42_320, "weight": 0.9},
+# ]
+
 # 위 weight는 예시야. 너가 val에서 best 나왔던 weight로 바꿔줘.
 
 
@@ -192,7 +227,7 @@ def main():
 
     imgs, preds = predict_weighted_ensemble(
         test_dir=test_dir,
-        ensemble_items=ENSEMBLE_ITEMS,
+        ensemble_items=ENSEMBLE_ITEMS2,
         num_classes=NUM_CLASSES,
         batch_size=batch_size,
         num_workers=2

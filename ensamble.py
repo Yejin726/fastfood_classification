@@ -20,7 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @dataclass
 class CFG:
-    seed: int = 42
+    seed: int = 43
     data_root: str = "./data"     # <- 수정
     train_dir: str = "Train"             # train/<class_name>/*.jpg
     test_dir: str  = "Test"              # test/*.jpg
@@ -38,6 +38,11 @@ class CFG:
 
 cfg = CFG()
 
+def make_split(seed, targets, val_ratio=0.2):
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=val_ratio, random_state=seed)
+    idx = np.arange(len(targets))
+    tr_idx, va_idx = next(sss.split(idx, targets))
+    return tr_idx, va_idx
 
 val_tf_224 = transforms.Compose([
     transforms.Resize(int(224 * 1.15)),
@@ -60,7 +65,11 @@ targets = np.array(base_ds.targets)
 
 from sklearn.model_selection import StratifiedShuffleSplit
 sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=cfg.seed)
-tr_idx, va_idx = next(sss.split(np.arange(len(targets)), targets))
+#tr_idx, va_idx = next(sss.split(np.arange(len(targets)), targets))
+tr42, va42 = make_split(42, targets, val_ratio=0.2)
+tr43, va43 = make_split(43, targets, val_ratio=0.2)
+
+print(f"seed42 val: {len(va42)} / seed43 val: {len(va43)}")
 
 
 class SubsetWithTransform(Dataset):
@@ -79,24 +88,35 @@ class SubsetWithTransform(Dataset):
         img = self.transform(img)
         return img, y
 
-val_ds_224   = SubsetWithTransform(base_ds, va_idx, val_tf_224)
-val_ds_320   = SubsetWithTransform(base_ds, va_idx, val_tf_320)
+val_ds42_224 = SubsetWithTransform(base_ds, va42, val_tf_224)
+val_ds42_320 = SubsetWithTransform(base_ds, va42, val_tf_320)
+val_loader42_224 = DataLoader(val_ds42_224, batch_size=cfg.batch_size, shuffle=False,
+                              num_workers=cfg.num_workers, pin_memory=True)
+val_loader42_320 = DataLoader(val_ds42_320, batch_size=cfg.batch_size, shuffle=False,
+                              num_workers=cfg.num_workers, pin_memory=True)
+
+val_ds43_224 = SubsetWithTransform(base_ds, va43, val_tf_224)
+val_ds43_320 = SubsetWithTransform(base_ds, va43, val_tf_320)
+val_loader43_224 = DataLoader(val_ds43_224, batch_size=cfg.batch_size, shuffle=False,
+                              num_workers=cfg.num_workers, pin_memory=True)
+val_loader43_320 = DataLoader(val_ds43_320, batch_size=cfg.batch_size, shuffle=False,
+                              num_workers=cfg.num_workers, pin_memory=True)
 
 
-val_loader_224 = DataLoader(
-    val_ds_224,
-    batch_size=cfg.batch_size,
-    shuffle=False,
-    num_workers=cfg.num_workers,
-    pin_memory=True
-)
-val_loader_320 = DataLoader(
-    val_ds_320,
-    batch_size=cfg.batch_size,
-    shuffle=False,
-    num_workers=cfg.num_workers,
-    pin_memory=True
-)
+# val_loader_224 = DataLoader(
+#     val_ds_224,
+#     batch_size=cfg.batch_size,
+#     shuffle=False,
+#     num_workers=cfg.num_workers,
+#     pin_memory=True
+# )
+# val_loader_320 = DataLoader(
+#     val_ds_320,
+#     batch_size=cfg.batch_size,
+#     shuffle=False,
+#     num_workers=cfg.num_workers,
+#     pin_memory=True
+# )
 
 
 # ----------------------------
@@ -299,12 +319,14 @@ def forward_with_tta(model, x, tta_mode="none"):
 num_classes = 10
 
 models = [
-    {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small.pt", "val_loader": val_loader_224},
-    {"model_name": "convnext_small", "ckpt": "./checkpoint/320/convnext_small.pt", "val_loader": val_loader_320},
-    {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny.pt",  "val_loader": val_loader_224},
-    {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/320/convnext_tiny.pt",  "val_loader": val_loader_320},
-    {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/224/resnext50_32x4d.pt","val_loader": val_loader_224},
-    {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/320/resnext50_32x4d.pt","val_loader": val_loader_320},
+    {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small.pt", "val_loader": val_loader42_224 },
+    {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small_43.pt", "val_loader": val_loader43_224 },
+    {"model_name": "convnext_small", "ckpt": "./checkpoint/320/convnext_small.pt", "val_loader": val_loader42_320 },
+    {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny.pt",  "val_loader": val_loader42_224 },
+    {"model_name": "convnext_tiny", "ckpt": "./checkpoint/224/convnext_tiny_43.pt", "val_loader": val_loader43_224 },
+    {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/320/convnext_tiny.pt",  "val_loader": val_loader42_320 },
+    {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/224/resnext50_32x4d.pt","val_loader": val_loader42_224 },
+    {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/320/resnext50_32x4d.pt","val_loader": val_loader42_320 },
 ]
 
 # print("=== Single Model Validation Scores ===")
@@ -325,35 +347,55 @@ models = [
 # f1 = eval_ensemble(ensemble2, num_classes)
 # print("Ensemble small+tiny:", f1)
 
-f1 = eval_ensemble(models, num_classes)
-print("Ensemble all 6:", f1)
+# f1 = eval_ensemble(models, num_classes)
+# print("Ensemble all 6:", f1)
 
 models_weighted = [
     {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small.pt",
-     "val_loader": val_loader_224, "weight": 1.2},
+     "val_loader": val_loader42_224, "weight": 1.2},
+    
+    {"model_name": "convnext_small", "ckpt": "./checkpoint/224/convnext_small_43.pt",
+     "val_loader": val_loader43_224, "weight": 1.2},
+
 
     {"model_name": "convnext_small", "ckpt": "./checkpoint/320/convnext_small.pt",
-     "val_loader": val_loader_320, "weight": 1.0},
+     "val_loader": val_loader42_320, "weight": 1.0},
 
     {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny.pt",
-     "val_loader": val_loader_224, "weight": 1.0},
+     "val_loader": val_loader42_224, "weight": 1.0},
+    
+    {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/224/convnext_tiny_43.pt",
+     "val_loader": val_loader43_224, "weight": 1.0},
 
     {"model_name": "convnext_tiny",  "ckpt": "./checkpoint/320/convnext_tiny.pt",
-     "val_loader": val_loader_320, "weight": 1.0},
+     "val_loader": val_loader42_320, "weight": 1.0},
 
     {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/224/resnext50_32x4d.pt",
-     "val_loader": val_loader_224, "weight": 0.9},
+     "val_loader": val_loader42_224, "weight": 0.9},
 
     {"model_name": "resnext50_32x4d","ckpt": "./checkpoint/320/resnext50_32x4d.pt",
-     "val_loader": val_loader_320, "weight": 0.9},
+     "val_loader": val_loader42_320, "weight": 0.9},
 ]
 
-ensemble2 = [models_weighted[0], models_weighted[1], models_weighted[2], models_weighted[3]]
-f1 = eval_ensemble(ensemble2, num_classes)
-print("Weighted ensemble small+tiny:", f1)
+# ensemble2 = [models_weighted[0], models_weighted[1], models_weighted[2], models_weighted[3]]
+# f1 = eval_ensemble(ensemble2, num_classes)
+# print("Weighted ensemble small+tiny:", f1)
 
-f1 = eval_ensemble(models_weighted, num_classes)
-print("Weighted ensemble:", f1)
+# ensemble3 = [models_weighted[0], models_weighted[2], models_weighted[3], models_weighted[5]]
+# f1 = eval_ensemble(ensemble3, num_classes)
+# print("Weighted ensemble:", f1)
+
+
+# ensemble4 = [models_weighted[0], models_weighted[1], models_weighted[3], models_weighted[4]]
+# f1 = eval_ensemble(ensemble4, num_classes)
+# print("Weighted ensemble random seed:", f1)
+
+ensemble42 = [models_weighted[0], models_weighted[3]]  # 둘 다 val_loader42_224
+print(eval_ensemble(ensemble42, num_classes))
+
+# ✅ OK: 전부 val43
+ensemble43 = [models_weighted[1], models_weighted[4]]  # 둘 다 val_loader43_224
+print(eval_ensemble(ensemble43, num_classes))
 
 # f1 = eval_ensemble(models, num_classes, tta_mode="flip")
 # print("Ensemble all 6 + flip:", f1)
