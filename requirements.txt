@@ -4,3 +4,4 @@ pandas==3.0.1
 tensorboard==2.20.0
 matplotlib==3.10.8
 seaborn==0.13.2
+timm==1.0.25
